@@ -8,6 +8,7 @@ import { apiRouter } from './routes/index.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { requireDatabase } from './middleware/databaseMiddleware.js';
 import { verifyOrigin } from './middleware/originMiddleware.js';
+
 export function createApp({
   clientOrigin = 'http://localhost:5173',
   allowedOrigins = [clientOrigin],
@@ -16,14 +17,30 @@ export function createApp({
   const app = express();
   app.disable('x-powered-by');
   app.locals.production = production;
-  // Render (and similar hosts) sit behind one reverse proxy and send X-Forwarded-For.
-  // Trust only that first hop so express-rate-limit can identify clients correctly.
-  if (production) app.set('trust proxy', 1);
   // Render sits behind one reverse proxy and sends X-Forwarded-For.
   // Trust that first hop so express-rate-limit can identify clients correctly.
   app.set('trust proxy', 1);
   app.use(helmet());
   app.use(cors({
     origin(origin, callback) {
-
-[21 lines collapsed]
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE']
+  }));
+  app.use(express.json({ limit: '5mb' }));
+  app.use(cookieParser());
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  app.use('/api', rateLimit({
+    windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false,
+    message: { error: 'Too many requests. Please try again in 15 minutes.' }
+  }));
+  app.get('/api/health', (_req, res) => res.json({
+    status: 'ok', database: mongoose.connection.readyState === 1 ? 'connected' : 'unavailable'
+  }));
+  app.use('/api', verifyOrigin(allowedOrigins), requireDatabase, apiRouter);
+  app.use(notFound);
+  app.use(errorHandler);
+  return app;
+}
