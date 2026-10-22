@@ -17,6 +17,9 @@ export function createApp({
   const app = express();
   app.disable('x-powered-by');
   app.locals.production = production;
+  // Render (and similar hosts) sit behind one reverse proxy and send X-Forwarded-For.
+  // Trust only that first hop so express-rate-limit can identify clients correctly.
+  if (production) app.set('trust proxy', 1);
   app.use(helmet());
   app.use(cors({
     origin(origin, callback) {
