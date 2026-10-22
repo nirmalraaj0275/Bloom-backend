@@ -1,12 +1,18 @@
 import * as auth from '../services/authService.js';
 
-const cookieOptions = res => ({
-  httpOnly: true,
-  secure: res.app.locals.production,
-  sameSite: 'strict',
-  path: '/api',
-  maxAge: 7 * 86400000
-});
+const cookieOptions = res => {
+  // Cross-origin (e.g. Vercel frontend → Render API) needs SameSite=None + Secure
+  // so the browser still sends bloomcycle_session after a hard refresh.
+  // Same-origin local Vite proxy can keep Strict.
+  const crossSite = Boolean(res.app.locals.production);
+  return {
+    httpOnly: true,
+    secure: crossSite,
+    sameSite: crossSite ? 'none' : 'strict',
+    path: '/api',
+    maxAge: 7 * 86400000
+  };
+};
 
 function userPayload(user) {
   return { user: { username: user.username }, revision: user.revision ?? 0 };
